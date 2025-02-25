@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>单词对对碰-LucasLumu</title>
+    <style>
+        body {
+                      font-family: 'Comic Sans MS', cursive, sans-serif;
+            background-color: #ffffff;
+            color: #333;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+       .outer-container {
+            background: #87CEEB;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            width: 90%;
+            max-width: 1200px;
+            margin: 20px auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+       .title-timer-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+       .title-box {
+            font-size: 36px;
+            font-weight: bold;
+        }
+
+       .timer-box {
+            font-size: 24px;
+        }
+
+       .game-container {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            flex: 1;
+        }
+
+       .box {
+            background: rgba(255, 255, 255, 0.8);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            width: 45%;
+            min-height: 200px;
+            display: flex;
+            flex-wrap: wrap;
+            align-content: flex-start;
+            justify-content: center;
+        }
+
+       .bubble {
+            background: #ADD8E6;
+            color: #000000;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 24px;
+            padding: 20px;
+            margin: 5px;
+            min-width: 100px;
+            transition: transform 0.3s ease; 
+        }
+
+       .bubble:hover {
+              transform: scale(1.05);
+        }
+
+       .bubble.wrong {
+            animation: shake 0.5s;
+        }
+
+        @keyframes shake {
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+
+            25% {
+                transform: translateX(-10px);
+            }
+
+            75% {
+                transform: translateX(10px);
+            }
+        }
+
+       .button-container {
+            margin: 20px 0;
+        }
+
+       .reset-button,
+       .import-button,
+       .export-button {
+            background: #4CAF50;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 18px;
+            margin: 0 10px;
+        }
+
+       .accuracy {
+            font-size: 18px;
+            color: #000;
+            margin-bottom: 20px;
+        }
+
+        /* 隐藏文件输入框 */
+        #file-input {
+            display: none;
+        }
+    </style>
+    <!-- 引入 XLSX 库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+</head>
+
+<body>
+    <div class="outer-container">
+        <div class="title-timer-container">
+            <div class="title-box">单词对对碰</div>
+            <div class="timer-box" id="timer-box">用时: 00:00</div>
+        </div>
+        <div class="game-container">
+            <div class="box" id="word-box"></div>
+            <div class="box" id="meaning-box"></div>
+        </div>
+    </div>
+    <div class="button-container">
+        <button class="reset-button" id="reset-button">重置</button>
+        <input type="file" id="file-input" accept=".xlsx" />
+        <button class="import-button" id="import-button">导入单词</button>
+        <button class="export-button" id="export-button">导出报告</button>
+    </div>
+    <div class="accuracy" id="accuracy">正确率: 0%</div>
+
+    <script>
+        let words = [];
+        let selectedWord = null;
+        let selectedMeaning = null;
+        let totalPairs = 0;
+        let correctPairs = 0;
+        let totalAttempts = 0;
+        let startTime = null;
+        let timerInterval = null;
+        const timerBox = document.getElementById('timer-box');
+
+        const wordBox = document.getElementById('word-box');
+        const meaningBox = document.getElementById('meaning-box');
+        const resetButton = document.getElementById('reset-button');
+        const importButton = document.getElementById('import-button');
+        const exportButton = document.getElementById('export-button');
+        const fileInput = document.getElementById('file-input');
+        const accuracyDisplay = document.getElementById('accuracy');
+
+        // 初始化语音合成对象
+        const synth = window.speechSynthesis;
+
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        function createBubbles() {
+            wordBox.innerHTML = '';
+            meaningBox.innerHTML = '';
+            if (words.length === 0) {
+                wordBox.textContent = '请导入单词文件';
+                meaningBox.textContent = '请导入单词文件';
+                return;
+            }
+            const shuffledWords = shuffleArray([...words]);
+            const shuffledMeanings = shuffleArray([...words.map(wordObj => wordObj.meaning)]);
+
+            shuffledWords.forEach(wordObj => {
+                const wordBubble = document.createElement('div');
+                wordBubble.classList.add('bubble');
+                wordBubble.textContent = wordObj.word;
+                wordBubble.addEventListener('click', () => {
+                    startTimerAndSelectBubble(wordBubble, 'word');
+                    speakWord(wordObj.word);
+                });
+                wordBox.appendChild(wordBubble);
+            });
+
+            shuffledMeanings.forEach(meaning => {
+                const meaningBubble = document.createElement('div');
+                meaningBubble.classList.add('bubble');
+                meaningBubble.textContent = meaning;
+                meaningBubble.addEventListener('click', () => startTimerAndSelectBubble(meaningBubble,'meaning'));
+                meaningBox.appendChild(meaningBubble);
+            });
+        }
+
+        function startTimerAndSelectBubble(bubble, type) {
+            if (!startTime) {
+                startTime = Date.now();
+                timerInterval = setInterval(updateTimer, 1000);
+            }
+            selectBubble(bubble, type);
+        }
+
+        function selectBubble(bubble, type) {
+            if (selectedWord === null && type === 'word') {
+                selectedWord = bubble;
+                selectedWord.style.backgroundColor = '#ff9900';
+            } else if (selectedMeaning === null && type ==='meaning') {
+                selectedMeaning = bubble;
+                selectedMeaning.style.backgroundColor = '#ff9900';
+            }
+
+            if (selectedWord!== null && selectedMeaning!== null) {
+                totalAttempts++;
+                const word = selectedWord.textContent;
+                const meaning = selectedMeaning.textContent;
+                const isMatch = words.some(item => item.word === word && item.meaning === meaning);
+                if (isMatch) {
+                    correctPairs++;
+                    selectedWord.style.display = 'none';
+                    selectedMeaning.style.display = 'none';
+                    if (correctPairs === totalPairs) {
+                        clearInterval(timerInterval);
+                        const endTime = Date.now();
+                        const elapsedTime = endTime - startTime;
+                        const minutes = Math.floor(elapsedTime / 60000);
+                        const seconds = Math.floor((elapsedTime % 60000) / 1000);
+                        const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                        const shouldRestart = confirm(`游戏结束，你用时 ${timeString}，是否再来一次？`);
+                        if (shouldRestart) {
+                            resetGame();
+                        }
+                    }
+                } else {
+                    selectedWord.classList.add('wrong');
+                    selectedMeaning.classList.add('wrong');
+                    setTimeout(() => {
+                        selectedWord.classList.remove('wrong');
+                        selectedMeaning.classList.remove('wrong');
+                        selectedWord.style.backgroundColor = '#ADD8E6';
+                        selectedMeaning.style.backgroundColor = '#ADD8E6';
+                    }, 500);
+                }
+                selectedWord = null;
+                selectedMeaning = null;
+                updateAccuracy();
+            }
+        }
+
+        function updateTimer() {
+            const currentTime = Date.now();
+            const elapsedTime = currentTime - startTime;
+            const minutes = Math.floor(elapsedTime / 60000);
+            const seconds = Math.floor((elapsedTime % 60000) / 1000);
+            const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            timerBox.textContent = `用时: ${timeString}`;
+        }
+
+        function updateAccuracy() {
+            const accuracy = (correctPairs / totalAttempts * 100).toFixed(2);
+            accuracyDisplay.textContent = `正确率: ${isNaN(accuracy)? 0 : accuracy}%`;
+        }
+
+        function resetGame() {
+            selectedWord = null;
+            selectedMeaning = null;
+            totalPairs = words.length;
+            correctPairs = 0;
+            totalAttempts = 0;
+            startTime = null;
+            clearInterval(timerInterval);
+            timerBox.textContent = '用时: 00:00';
+            createBubbles();
+            updateAccuracy();
+        }
+
+        function importWords(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const data = e.target.result;
+                const workbook = XLSX.read(data, { type: 'binary' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                const json = XLSX.utils.sheet_to_json(sheet);
+                words.length = 0;
+                json.forEach(row => {
+                    words.push({ word: row['单词'], meaning: row['翻译'] });
+                });
+                totalPairs = words.length;
+                // 存储到 localStorage
+                localStorage.setItem('importedWords', JSON.stringify(words));
+                resetGame();
+            };
+            reader.readAsBinaryString(file);
+        }
+
+        function exportReport() {
+            let elapsedTime = 0;
+            if (startTime) {
+                const endTime = Date.now();
+                elapsedTime = endTime - startTime;
+            }
+            const minutes = Math.floor(elapsedTime / 60000);
+            const seconds = Math.floor((elapsedTime % 60000) / 1000);
+            const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+            const report = `学习报告\n日期: ${new Date().toLocaleDateString()}\n答题总数: ${totalAttempts}\n正确率: ${(correctPairs / totalAttempts * 100).toFixed(2)}%\n用时: ${timeString}\n需复习单词: ${words.filter((word, index) => {
+                const wordBubble = Array.from(wordBox.children).find(bubble => bubble.textContent === word.word);
+                return wordBubble && wordBubble.style.display!== 'none';
+            }).map(word => word.word).join(', ')}`;
+            const blob = new Blob([report], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '学习报告.txt';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // 发音函数
+        function speakWord(word) {
+            if (synth.speaking) {
+                synth.cancel();
+            }
+            const utterThis = new SpeechSynthesisUtterance(word);
+            utterThis.lang = 'en-US';
+            const voices = synth.getVoices();
+
+            // 美式英语女声（开启）
+            // const femaleVoice = voices.find(voice => voice.lang === 'en-US' && voice.name === 'Microsoft Zira Desktop - English (United States)');
+            // if (femaleVoice) {
+            //     utterThis.voice = femaleVoice;
+            // }
+
+            // 美式英语男声（开启）
+            const maleVoice = voices.find(voice => voice.lang === 'en-US' && voice.name === 'Microsoft David Desktop - English (United States)');
+            if (maleVoice) {
+                utterThis.voice = maleVoice;
+            }
+
+            // 美式英语童声（暂不开启）
+            // const childVoice = voices.find(voice => voice.lang === 'en-US' && voice.name === 'Microsoft Celia RUS Desktop - English (United States)');
+            // if (childVoice) {
+            //     utterThis.voice = childVoice;
+            // }
+
+            synth.speak(utterThis);
+        }
+
+        // 尝试从 localStorage 中读取数据
+        const storedWords = localStorage.getItem('importedWords');
+        if (storedWords) {
+            words = JSON.parse(storedWords);
+            totalPairs = words.length;
+            createBubbles();
+        } else {
+            createBubbles();
+        }
+
+        resetButton.addEventListener('click', resetGame);
+        importButton.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', importWords);
+        exportButton.addEventListener('click', exportReport);
+    </script>
+</body>
+
+</html>
